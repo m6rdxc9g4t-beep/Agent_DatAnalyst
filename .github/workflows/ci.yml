@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: Agent_DatAnalyst
+      # Les tests s'exécutent contre le backend d'Atelier Nexus (dépôt privé) :
+      # secret NEXUS_REPO_TOKEN = jeton en lecture seule sur Atelier_Nexus.
+      - uses: actions/checkout@v4
+        with:
+          repository: m6rdxc9g4t-beep/Atelier_Nexus
+          token: ${{ secrets.NEXUS_REPO_TOKEN }}
+          path: Atelier_Nexus
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r Atelier_Nexus/backend/requirements-dev.txt
+      - working-directory: Agent_DatAnalyst
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+          MYPYPATH=src:../Atelier_Nexus/backend mypy
+          pytest

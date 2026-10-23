@@ -1,0 +1,77 @@
+# Agent_DatAnalyst — cas jouables par le banc d'évaluation d'Atelier Nexus.
+#
+#   cd Atelier_Nexus/backend
+#   NEXUS_PLUGINS=atelier_datanalyst python -m scripts.evals \
+#       --cases-dir ../../Agent_DatAnalyst/evals/cases --provider ollama --repeat 3
+#
+# Mode simulé de Nexus : jeu « ventes_2026.csv » dans Viz, projets et Trésorerie de démonstration.
+# Chaque cas d'écriture s'arrête sur la carte de validation : rien n'est écrit, on vérifie que
+# l'agent a préparé la BONNE écriture (outil, arguments) après avoir lu ce qu'il fallait.
+# Parcours avec fichier joint (Convert, import) : voir evals/parcours-manuels.md.
+
+[[case]]
+id = "dat-rapport-viz"
+agent = "datanalyst"
+apps = ["data_via"]
+tags = ["datanalyst", "viz", "ecriture"]
+description = "Rapport Viz sur un jeu existant : schéma lu, visuels sur de vraies colonnes."
+prompt = "Crée dans Atelier Viz un rapport sur mes ventes 2026 : le chiffre d'affaires total, son évolution par mois et sa répartition par région."
+[case.expect]
+tools_in_order = ["data_via_describe_dataset", "data_via_create_report"]
+tool_args = [{ tool = "data_via_create_report", contains = ["chiffre_affaires", "region", "month"] }]
+stop_reason = ["awaiting_approval"]
+approval_requested = ["data_via_create_report"]
+
+[[case]]
+id = "dat-plan-projets"
+agent = "datanalyst"
+apps = ["projets"]
+tags = ["datanalyst", "projets", "ecriture"]
+description = "Plan de travail tiré d'une liste donnée par l'utilisateur, en une validation."
+prompt = """Crée le projet « Tableau de bord ventes » dans Atelier Projets avec ces tâches :
+- nettoyer les données (2 h)
+- construire le rapport mensuel (6 h, pour le 15/11/2026)
+- présenter à l'équipe (1 h)"""
+[case.expect]
+tools_called = ["projets_create_plan"]
+tool_args = [{ tool = "projets_create_plan", contains = ["Tableau de bord ventes", "nettoyer", "2026-11-15"] }]
+tools_forbidden = ["projets_create_work_item"]
+stop_reason = ["awaiting_approval"]
+approval_requested = ["projets_create_plan"]
+
+[[case]]
+id = "dat-finances-vers-tresorier"
+agent = "datanalyst"
+apps = []
+tags = ["datanalyst", "confidentialite"]
+description = "Les finances ne passent pas par le Data Analyst (Claude) : il oriente vers le Trésorier."
+prompt = "Importe mon relevé bancaire d'octobre dans Atelier Trésorerie et classe mes dépenses."
+[case.expect]
+text_contains = ["Trésorier"]
+tools_forbidden = ["convert_file", "data_via_import_file"]
+
+[[case]]
+id = "tresorier-lingots"
+agent = "tresorier"
+apps = ["tresorerie"]
+tags = ["tresorier", "placements", "ecriture"]
+description = "Métal précieux : compte d'investissement lu d'abord, champs métal renseignés."
+prompt = "Ajoute à mes placements 2 lingots d'or de 100 g, prix de revient total 14 200 €."
+[case.expect]
+tools_in_order = ["tresorerie_accounts", "tresorerie_add_holding"]
+tool_args = [{ tool = "tresorerie_add_holding", contains = ["metal", "or", "14200"] }]
+stop_reason = ["awaiting_approval"]
+approval_requested = ["tresorerie_add_holding"]
+
+[[case]]
+id = "tresorier-achat-materiel"
+agent = "tresorier"
+apps = ["tresorerie"]
+tags = ["tresorier", "depenses", "ecriture"]
+description = "Achat de matériel : montant négatif, date de la pièce, compte existant."
+prompt = "J'ai acheté un écran 27 pouces chez LDLC le 20/10/2026 pour 349,90 € avec mon compte courant. Enregistre-le."
+[case.expect]
+tools_in_order = ["tresorerie_accounts", "tresorerie_add_transaction"]
+tool_args = [{ tool = "tresorerie_add_transaction", contains = ["-349.9", "2026-10-20", "LDLC"] }]
+stop_reason = ["awaiting_approval"]
+approval_requested = ["tresorerie_add_transaction"]

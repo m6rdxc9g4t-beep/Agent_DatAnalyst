@@ -70,8 +70,20 @@ Le Data Analyst réutilise aussi les boîtes fournies par Nexus : `data_via` (le
 - **Confidentialité** : tout outil Trésorerie est `sensitive` ; l'agent qui l'utilise ne peut pas tourner sur Claude. Le Data Analyst n'a aucun outil Trésorerie et oriente vers le Trésorier.
 - **Fichiers** : un outil ne voit que les fichiers cités par la conversation en cours ; leur contenu n'est jamais renvoyé au modèle par les outils.
 - **Pas de doublon** : clés d'idempotence stables sur Convert et Viz ; Trésorerie ignore les opérations déjà importées ; un plan Projets interrompu dit ce qui existe déjà.
-- **Viz sans IA tierce** : les visuels proposés par l'agent sont validés par Atelier Viz (`/ai/visuals/repair`, sans appel à l'IA de Viz) contre le schéma relu au moment d'écrire.
+- **Viz sans IA tierce, fermé par défaut** : les visuels sont contrôlés contre le schéma relu au moment d'écrire (colonnes, agrégations permises par type, une seule mesure pour secteurs / KPI…), puis par Atelier Viz (`/ai/visuals/repair`, sans appel à son IA). Viz corrigerait certains visuels en silence : si le visuel changerait par rapport à celui que vous avez validé, rien n'est écrit et l'agent repropose. La carte de validation décrit chaque visuel (« Courbes « CA par mois » : somme de chiffre_affaires par date (mois) »).
 - **Aucun endpoint inventé** : chaque route appelée a été lue dans le dépôt de l'application (référence dans la docstring de chaque module).
+
+## Vérifié contre les vraies applications
+
+Les outils ont été joués contre Viz, Convert, Projets et Trésorerie lancés (données de démonstration) : CSV → jeu et rapport Viz de 6 visuels (chaque visuel recalculé par le moteur de Viz), PDF → table Tab et jeu Viz, plan Projets complet, compte, achat de matériel, lingots d'or, ETF, import de relevé PDF (second import : tout en doublons), plus 14 cas d'erreur. Deux corrections en sont sorties : refus « fermé par défaut » ci-dessus, et un bug de Nexus sur l'origine des jeux publiés (corrigé dans #29).
+
+Rejouer (écrit de vraies données : applications de démonstration uniquement) :
+
+```bash
+cd Atelier_Nexus/backend
+NEXUS_PLUGINS=atelier_datanalyst PYTHONPATH=. python ../../Agent_DatAnalyst/scripts/parcours_reel.py
+NEXUS_PLUGINS=atelier_datanalyst PYTHONPATH=. python ../../Agent_DatAnalyst/scripts/parcours_erreurs.py
+```
 
 ## Développer
 

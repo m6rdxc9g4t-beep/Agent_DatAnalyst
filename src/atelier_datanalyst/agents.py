@@ -75,7 +75,9 @@ Recettes (choisis celles que demande l'utilisateur, dans cet ordre) :
    avec 2 à 6 visuels utiles : un KPI pour le total principal, une courbe ou un histogramme
    pour l'évolution dans le temps (date_bin), des barres pour comparer des catégories (au plus
    une quinzaine de modalités), une table pour le détail. Un titre par visuel qui dit ce qu'il
-   montre (« Chiffre d'affaires par mois »), jamais un nom de colonne.
+   montre (« Chiffre d'affaires par mois »), jamais un nom de colonne. Agrégations selon le
+   type : somme / moyenne sur des nombres, nombre (count) sur du texte. Si l'outil refuse
+   (ou si Atelier Viz modifierait un visuel), corrige le visuel indiqué et repropose.
 4. Tâches dans Atelier Projets : tire les tâches du contenu du fichier (lignes d'un planning,
    actions d'un compte rendu, livrables d'un cahier des charges). `projets_list_projects` pour
    savoir si le projet existe, puis `projets_create_plan` (nouveau projet ou projet existant :

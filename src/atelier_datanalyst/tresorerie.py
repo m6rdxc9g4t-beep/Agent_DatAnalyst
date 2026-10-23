@@ -15,7 +15,6 @@ from collections.abc import Callable
 from pathlib import PurePath
 from typing import Any, Literal
 
-import httpx
 from app.schemas.tresorerie import Account, AccountType, Transaction
 from app.tools.base import BaseTool, ToolContext, ToolInput, ToolOutput
 from app.tools.formatting import euros, table_for_model
@@ -112,23 +111,14 @@ class TresoWriteClient(TresorerieClient):
     async def import_preview(self, filename: str, content: bytes, account_id: int) -> ImportPreview:
         """Aperçu d'import (ne modifie rien ; POST multipart, d'où l'en-tête anti-CSRF)."""
         media_type = IMPORT_TYPES.get(PurePath(filename).suffix.lower(), "application/octet-stream")
-        try:
-            response = await self._http.post(
-                "import/preview",
-                files={"file": (filename, content, media_type)},
-                data={"account_id": str(account_id)},
-                headers=WRITE_HEADERS,
-            )
-        except httpx.HTTPError as exc:
-            raise AppError(
-                f"{self.label} injoignable : {self._unavailable_hint()}", app=self.app
-            ) from exc
-        if response.status_code >= 400:
-            raise AppError(
-                f"{self.label} : {self._detail(response) or f'erreur {response.status_code}'}",
-                app=self.app,
-            )
-        return self.parse(ImportPreview, response.json())
+        data = await self.request(
+            "POST",
+            "import/preview",
+            files={"file": (filename, content, media_type)},
+            form={"account_id": str(account_id)},
+            headers=WRITE_HEADERS,
+        )
+        return self.parse(ImportPreview, data)
 
     async def import_commit(self, account_id: int, rows: list[dict[str, Any]]) -> ImportCommit:
         return self.parse(

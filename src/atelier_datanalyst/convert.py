@@ -24,7 +24,7 @@ import httpx
 from app.tools.base import Artifact, BaseTool, ToolContext, ToolInput, ToolOutput
 from app.tools.data_via import DataViaError, markdown_table
 from app.tools.formatting import atelier_table
-from app.tools.http import AppClient, AppError, AppRequestError, AppUnavailableError
+from app.tools.http import AppClient, AppError, AppRequestError
 from pydantic import BaseModel, ConfigDict, Field
 
 from atelier_datanalyst.files import FileGetter, file_field, human_size
@@ -218,20 +218,7 @@ class ConvertClient(AppClient):
 
     async def export(self, conversion_id: str, fmt: str = "xlsx") -> bytes:
         """Fichier exporté (`xlsx` : valeurs typées, sans ambiguïté de séparateur décimal)."""
-        try:
-            response = await self._http.get(
-                f"conversions/{conversion_id}/export", params={"format": fmt}
-            )
-        except httpx.HTTPError as exc:
-            raise AppUnavailableError(
-                f"{self.label} injoignable : {self._unavailable_hint()}", app=self.app
-            ) from exc
-        if response.status_code >= 400:
-            raise AppRequestError(
-                f"{self.label} : {self._detail(response) or f'erreur {response.status_code}'}",
-                app=self.app,
-            )
-        return response.content
+        return await self.download(f"conversions/{conversion_id}/export", params={"format": fmt})
 
 
 def idempotency_key(*parts: str) -> str:
@@ -496,7 +483,13 @@ class SendToVizTool(_ConvertTool[SendToVizInput]):
                 "send_to_viz", params.conversion_id, name, str(len(rows))
             ),
         )
-        verb = "créé" if result.action == "created" else "mis à jour"
+        headers = viz.last_headers
+        replayed = headers is not None and headers.get("idempotency-replayed") == "true"
+        verb = (
+            "déjà envoyé (inchangé)"
+            if replayed
+            else ("créé" if result.action == "created" else "mis à jour")
+        )
         text = (
             f"Jeu « {result.name} » {verb} dans Atelier Viz (id {result.dataset_id}), "
             f"{result.rows} ligne(s). Consulte son schéma avec data_via_describe_dataset."

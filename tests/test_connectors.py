@@ -247,6 +247,7 @@ class FakeVizWrites(FakeDataVia):
     def __init__(self) -> None:
         super().__init__()
         self.saved: dict[str, Any] | None = None
+        self.alter = False
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path.removeprefix("/api"), request.method
@@ -263,15 +264,22 @@ class FakeVizWrites(FakeDataVia):
                       "rows": len(body["table"]["rows"]), "action": "created"},
             )  # fmt: skip
         if (method, path) == ("POST", "/ai/visuals/repair"):
+            # Comme le vrai `repair_items` de Viz : il CORRIGE sans refuser (mesure en trop
+            # tronquée, agrégation remplacée…) ; `self.alter` simule une correction silencieuse.
             self.requests.append(request)
             body = json.loads(request.content)
             assert {c["type"] for c in body["catalog"]} >= {"column", "kpi", "table"}
             results = []
             for v in body["visuals"]:
-                if v["type"] == "pie" and len(v["roles"]["values"]) != 1:
-                    results.append({"visual": None, "errors": ["Valeurs : 1 champ au plus."]})
-                else:
-                    results.append({"visual": v | {"options": {"labels": True}}, "warnings": []})
+                roles = {
+                    k: [{"agg": None, "bin": None, **b} for b in items]
+                    for k, items in v["roles"].items()
+                }
+                if self.alter:
+                    roles["values"] = roles["values"][:1]
+                results.append(
+                    {"visual": {**v, "roles": roles, "options": {"labels": True}}, "warnings": []}
+                )
             return httpx.Response(200, json={"results": results})
         if (method, path) == ("POST", "/reports"):
             self.requests.append(request)
@@ -321,8 +329,10 @@ async def test_viz_create_report(viz: tuple[dict[str, Any], FakeVizWrites]) -> N
     report = tools["data_via_create_report"]
     assert report.requires_approval
     assert report.summarize(REPORT) == (
-        "Créer dans Atelier Viz le rapport « Ventes 2026 » (3 visuel(s) : Carte KPI « Chiffre "
-        "d'affaires total », Courbes « CA par mois », Barres horizontales « CA par région »)"
+        "Créer dans Atelier Viz le rapport « Ventes 2026 » (3 visuel(s)) — Carte KPI « Chiffre "
+        "d'affaires total » : somme de chiffre_affaires ; Courbes « CA par mois » : somme de "
+        "chiffre_affaires par date (mois) ; Barres horizontales « CA par région » : somme de "
+        "chiffre_affaires par region"
     )
     out = await report.invoke(REPORT, ToolContext())
     assert not out.is_error and "rep_1" in out.content
@@ -342,15 +352,28 @@ async def test_viz_create_report(viz: tuple[dict[str, Any], FakeVizWrites]) -> N
 
 async def test_viz_report_refused_before_writing(viz: tuple[dict[str, Any], FakeVizWrites]) -> None:
     tools, fake = viz
-    ctx = ToolContext()
-    typo = {**REPORT, "visuals": [{"type": "bar", "title": "x", "category": ["regoin"],
-                                   "values": [{"field": "chiffre_affaires"}]}]}  # fmt: skip
-    out = await tools["data_via_create_report"].invoke(typo, ctx)
-    assert out.is_error and "regoin" in out.content and "region" in out.content
-    pie = {**REPORT, "visuals": [{"type": "pie", "title": "Part", "category": ["region"],
-                                  "values": [{"field": "chiffre_affaires"}, {"field": "cout"}]}]}  # fmt: skip
-    refused = await tools["data_via_create_report"].invoke(pie, ctx)
-    assert refused.is_error and "rien n'a été créé" in refused.content
+    create = tools["data_via_create_report"]
+
+    async def refused(visual: dict[str, Any], expected: str) -> None:
+        out = await create.invoke({**REPORT, "visuals": [visual]}, ToolContext())
+        assert out.is_error and expected in out.content, out.content
+
+    # contrôles locaux (règles de Viz), avec suggestion
+    await refused({"type": "bar", "title": "x", "category": ["regoin"],
+                   "values": [{"field": "chiffre_affaires"}]}, "Vouliez-vous dire : region")  # fmt: skip
+    await refused({"type": "pie", "title": "Part", "category": ["region"],
+                   "values": [{"field": "chiffre_affaires"}, {"field": "cout"}]}, "exactement une mesure")  # fmt: skip
+    await refused({"type": "kpi", "title": "Total", "values": [{"field": "region", "agg": "sum"}]},
+                  "« sum » impossible sur « region »")  # fmt: skip
+    await refused({"type": "line", "title": "x", "values": [{"field": "cout"}]}, "axe")
+    await refused({"type": "pie", "title": "x", "category": ["region"], "series": "region",
+                   "values": [{"field": "cout"}]}, "légende")  # fmt: skip
+    assert not any(r.url.path.startswith("/api/ai") for r in fake.requests)  # Viz pas appelé
+
+    # Viz corrigerait en silence ce que l'utilisateur a validé : rien n'est écrit
+    fake.alter = True
+    await refused({"type": "column", "title": "CA et coût", "category": ["region"],
+                   "values": [{"field": "chiffre_affaires"}, {"field": "cout"}]}, "modifierait")  # fmt: skip
     assert not any(r.url.path.endswith("/reports") for r in fake.requests)
 
 

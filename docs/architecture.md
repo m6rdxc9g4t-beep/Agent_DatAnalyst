@@ -67,8 +67,13 @@ colonne titre : import Tab → Projets fourni par Nexus (sans doublon au réimpo
 ## Limites connues
 
 - Atelier Viz n'a pas de route de création de rapport « métier » : l'extension compose le JSON
-  du rapport (miroir de `schemas/report.py`) et le fait valider par `visuals/repair`. Une
-  évolution du registre des visuels de Viz demande de mettre à jour `VIZ_CATALOG`.
+  du rapport (miroir de `schemas/report.py`, même forme que le Studio) et le fait valider par
+  `visuals/repair`. Cette route **corrige** au lieu de refuser (mesure en trop tronquée,
+  agrégation remplacée, champ ignoré) : l'outil compare le résultat au visuel envoyé et
+  n'écrit rien s'il diffère. Une évolution du registre des visuels de Viz demande de mettre à
+  jour `VIZ_CATALOG` et `AGGS_BY_TYPE`.
+- Mesures calculées du modèle (`agg = calc`) : non proposées dans les rapports, la validation
+  des visuels de Viz ne les reconnaît pas.
 - `data_via_import_file` crée toujours un nouveau jeu (la route d'import de fichier de Viz n'a
   pas de clé) ; le prompt impose de vérifier la liste des jeux avant.
 - Un plan Projets n'est pas transactionnel : en cas d'échec au milieu, l'outil liste ce qui a

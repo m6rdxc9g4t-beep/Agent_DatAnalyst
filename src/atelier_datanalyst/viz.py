@@ -21,7 +21,7 @@ import httpx
 from app.core.config import Settings
 from app.schemas.data_via import Agg, ColumnType, DatasetProfile, DateBin
 from app.tools.base import BaseTool, ToolContext, ToolInput, ToolOutput
-from app.tools.data_via import DataViaClient, DataViaError, describe_for_model
+from app.tools.data_via import DataViaClient, DataViaError
 from app.tools.http import AppClient, AppError
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -144,20 +144,10 @@ class VizWriteClient(AppClient):
         self, filename: str, content: bytes, media_type: str
     ) -> DatasetProfile:
         """CSV, XLSX ou JSON → nouveau jeu de données (profil complet en retour)."""
-        try:
-            response = await self._http.post(
-                "datasets", files={"file": (filename, content, media_type)}
-            )
-        except httpx.HTTPError as exc:
-            raise AppError(
-                f"{self.label} injoignable : {self._unavailable_hint()}", app=self.app
-            ) from exc
-        if response.status_code >= 400:
-            raise AppError(
-                f"{self.label} : {self._detail(response) or f'erreur {response.status_code}'}",
-                app=self.app,
-            )
-        return self.parse(DatasetProfile, response.json())
+        data = await self.request(
+            "POST", "datasets", files={"file": (filename, content, media_type)}
+        )
+        return self.parse(DatasetProfile, data)
 
     async def upsert_table(
         self, name: str, key: str, table: dict[str, Any], *, idempotency_key: str | None = None
@@ -310,7 +300,7 @@ class ImportFileTool(_DataViaWriteTool[ImportFileInput]):
     name = "data_via_import_file"
     description = (
         "Importe un fichier joint à la conversation (CSV, XLSX ou JSON) comme NOUVEAU jeu de "
-        "données dans Atelier Viz et renvoie son schéma. "
+        "données dans Atelier Viz (identifiant, colonnes). "
         "PDF ou relevé bancaire : le convertir d'abord avec Atelier Convert (convert_file), puis "
         "convert_send_to_viz. Action soumise à la validation de l'utilisateur."
     )
@@ -336,18 +326,45 @@ class ImportFileTool(_DataViaWriteTool[ImportFileInput]):
                 is_error=True,
             )
         profile = await self.client.upload_dataset(info.name, content, media_type)
+        cols = ", ".join(f"`{c.name}` ({c.type})" for c in profile.columns)
         return ToolOutput(
-            content=f"Jeu de données créé dans Atelier Viz.\n{describe_for_model(profile)}",
+            content=f"Jeu de données créé dans Atelier Viz : « {profile.name} » (id {profile.id}), "
+            f"{profile.rows} lignes. Colonnes : {cols}. Appelle data_via_describe_dataset avant "
+            "toute requête.",
             data={"dataset_id": profile.id, "name": profile.name, "rows": profile.rows},
         )
 
 
+#: Agrégations d'un visuel (`AGGS` d'Atelier Viz, `services/ai/builder.py`) : pas de mesure
+#: calculée du modèle (`calc`), que la validation des visuels de Viz ne reconnaît pas.
+VisualAgg = Literal["sum", "avg", "median", "min", "max", "count", "count_distinct"]
+#: Agrégations permises par type de colonne (`AGGS_BY_TYPE` d'Atelier Viz)
+AGGS_BY_TYPE: dict[str, set[str]] = {
+    "number": {"sum", "avg", "median", "min", "max", "count", "count_distinct"},
+    "boolean": {"sum", "avg", "count"},
+    "date": {"min", "max", "count", "count_distinct"},
+    "string": {"count", "count_distinct", "min", "max"},
+}
+AGG_LABELS = {
+    "sum": "somme", "avg": "moyenne", "median": "médiane", "min": "min", "max": "max",
+    "count": "nombre", "count_distinct": "nombre distinct",
+}  # fmt: skip
+BIN_LABELS = {
+    "year": "année",
+    "quarter": "trimestre",
+    "month": "mois",
+    "week": "semaine",
+    "day": "jour",
+}
+#: Visuels à une seule mesure (rôle « values » avec max = 1 dans le registre de Viz)
+ONE_VALUE_TYPES = {"pie", "donut", "treemap", "funnel", "waterfall", "kpi"}
+
+
 class VisualValue(ToolInput):
-    field: str = Field(
-        min_length=1, max_length=200, description="Colonne (ou mesure si agg = calc)."
-    )
-    agg: Agg = Field(
-        default="sum", description="sum, avg, min, max, count, count_distinct, median, calc."
+    field: str = Field(min_length=1, max_length=200, description="Colonne mesurée.")
+    agg: VisualAgg = Field(
+        default="sum",
+        description="sum, avg, median, min, max (nombres) ; count, count_distinct (tout type).",
     )
 
 
@@ -369,7 +386,8 @@ class VisualSpec(ToolInput):
         description="Légende (une dimension) : column, bar, line, area.",
     )
     date_bin: DateBin | None = Field(
-        default=None, description="Période d'un axe de type date (year, quarter, month, week, day)."
+        default=None,
+        description="Période d'un axe de type date : year, quarter, month (défaut), week, day.",
     )
 
 
@@ -384,8 +402,8 @@ class CreateReportInput(ToolInput):
 def _visual_roles(spec: VisualSpec, types: Mapping[str, str]) -> dict[str, list[dict[str, Any]]]:
     def dim(name: str) -> dict[str, Any]:
         binding: dict[str, Any] = {"field": name}
-        if spec.date_bin and types.get(name) == "date":
-            binding["bin"] = spec.date_bin
+        if types.get(name) == "date":  # période explicite : Viz imposerait « month » sans le dire
+            binding["bin"] = spec.date_bin or "month"
         return binding
 
     dims = [dim(f) for f in spec.category]
@@ -403,21 +421,70 @@ def _visual_roles(spec: VisualSpec, types: Mapping[str, str]) -> dict[str, list[
     return roles
 
 
-def _unknown_fields(spec: VisualSpec, profile: DatasetProfile) -> list[str]:
-    columns = [c.name for c in profile.columns]
+def _check_visual(spec: VisualSpec, profile: DatasetProfile) -> list[str]:
+    """Contrôles locaux (règles du registre et de la validation de Viz) : erreurs claires et
+    suggestions AVANT d'appeler Viz."""
+    columns = {c.name: c.type for c in profile.columns}
+    names = list(columns)
+    where = f"« {spec.title} » ({VISUAL_LABELS[spec.type]})"
     errors = []
     for name in [*spec.category, *([spec.series] if spec.series else [])]:
         if name not in columns:
-            errors.append(
-                f"« {spec.title} » : colonne inconnue « {name} ».{_suggest(name, columns)}"
-            )
+            errors.append(f"{where} : colonne inconnue « {name} ».{_suggest(name, names)}")
     for v in spec.values:
-        pool = profile.measure_names if v.agg == "calc" else columns
-        if v.field not in pool:
+        if v.field not in columns:
+            errors.append(f"{where} : colonne inconnue « {v.field} ».{_suggest(v.field, names)}")
+        elif v.agg not in AGGS_BY_TYPE[columns[v.field]]:
+            allowed = ", ".join(sorted(AGGS_BY_TYPE[columns[v.field]]))
             errors.append(
-                f"« {spec.title} » : champ inconnu « {v.field} ».{_suggest(v.field, pool)}"
+                f"{where} : « {v.agg} » impossible sur « {v.field} » ({columns[v.field]}) ; "
+                f"possibles : {allowed}."
             )
+    if len(set(spec.category)) != len(spec.category) or len({v.field for v in spec.values}) != len(
+        spec.values
+    ):
+        errors.append(f"{where} : un même champ est placé deux fois.")
+    if spec.type in ONE_VALUE_TYPES and len(spec.values) != 1:
+        errors.append(f"{where} : exactement une mesure (values).")
+    if spec.type in _SERIES_TYPES and not spec.values:
+        errors.append(f"{where} : au moins une mesure (values).")
+    if spec.type != "table" and spec.type != "kpi" and not spec.category:
+        errors.append(f"{where} : un axe (category) est obligatoire.")
+    if spec.type == "kpi" and (
+        len(spec.category) > 1 or any(columns.get(c) not in (None, "date") for c in spec.category)
+    ):
+        errors.append(f"{where} : un KPI n'accepte qu'une date de tendance en category.")
+    if spec.type == "table" and not spec.category and not spec.values:
+        errors.append(f"{where} : une table affiche au moins une colonne ou une mesure.")
+    if spec.series and spec.type not in _SERIES_TYPES:
+        errors.append(f"{where} : légende (series) réservée à column, bar, line, area.")
     return errors
+
+
+def _bindings(
+    roles: Mapping[str, list[Any]],
+) -> dict[str, list[tuple[str, str | None, str | None]]]:
+    """Forme comparable des rôles : (champ, agrégation, période), dans l'ordre."""
+
+    def key(b: Any) -> tuple[str, str | None, str | None]:
+        if isinstance(b, dict):
+            return (b["field"], b.get("agg"), b.get("bin"))
+        return (b.field, b.agg, b.bin)
+
+    return {role: [key(b) for b in items] for role, items in roles.items() if items}
+
+
+def _describe(spec: VisualSpec) -> str:
+    """« Courbes « CA par mois » : somme de chiffre_affaires par date (mois) »."""
+    measures = ", ".join(f"{AGG_LABELS[v.agg]} de {v.field}" for v in spec.values) or "—"
+    axis = ", ".join(spec.category)
+    if axis and spec.type != "kpi":
+        measures += f" par {axis}"
+        if spec.date_bin:
+            measures += f" ({BIN_LABELS[spec.date_bin]})"
+    if spec.series and spec.type in _SERIES_TYPES:
+        measures += f" et {spec.series}"
+    return f"{VISUAL_LABELS[spec.type]} « {spec.title} » : {measures}"
 
 
 class CreateReportTool(_DataViaWriteTool[CreateReportInput]):
@@ -433,23 +500,24 @@ class CreateReportTool(_DataViaWriteTool[CreateReportInput]):
     output_format = "json"
 
     def approval_summary(self, params: CreateReportInput) -> str:
-        visuals = ", ".join(f"{VISUAL_LABELS[v.type]} « {v.title} »" for v in params.visuals)
+        visuals = " ; ".join(_describe(v) for v in params.visuals)
         return (
             f"Créer dans Atelier Viz le rapport « {params.name} » "
-            f"({len(params.visuals)} visuel(s) : {visuals})"
+            f"({len(params.visuals)} visuel(s)) — {visuals}"
         )
 
     async def run(self, params: CreateReportInput, ctx: ToolContext) -> ToolOutput:
         # Schéma relu au moment d'écrire : jamais de rapport sur des colonnes supposées
         profile = await self.data_via().get_dataset(params.dataset_id)
-        errors = [e for spec in params.visuals for e in _unknown_fields(spec, profile)]
+        errors = [e for spec in params.visuals for e in _check_visual(spec, profile)]
         if errors:
             return ToolOutput(content="Rapport refusé :\n- " + "\n- ".join(errors), is_error=True)
 
         types = {c.name: c.type for c in profile.columns}
-        proposed = [
-            {"type": s.type, "title": s.title, "roles": _visual_roles(s, types)}
-            for s in params.visuals
+        sent_roles = [_visual_roles(s, types) for s in params.visuals]
+        proposed: list[dict[str, Any]] = [
+            {"type": s.type, "title": s.title, "roles": roles}
+            for s, roles in zip(params.visuals, sent_roles, strict=True)
         ]
         checked = await self.client.repair_visuals(profile.id, list(VIZ_CATALOG), proposed)
         problems = [
@@ -463,7 +531,21 @@ class CreateReportTool(_DataViaWriteTool[CreateReportInput]):
                 content=f"Atelier Viz refuse ces visuels (rien n'a été créé) :\n- {detail}",
                 is_error=True,
             )
-        warnings = [w for r in checked.results for w in r.warnings]
+        # Fermé par défaut : la validation de Viz CORRIGE en silence (mesure en trop tronquée,
+        # agrégation remplacée, champ ignoré). L'utilisateur a validé CES visuels : si Viz
+        # changerait quoi que ce soit, rien n'est écrit et le modèle repropose.
+        changed = []
+        for spec, roles, result in zip(params.visuals, sent_roles, checked.results, strict=True):
+            assert result.visual is not None
+            if result.warnings or _bindings(roles) != _bindings(result.visual.roles):
+                detail = "; ".join(result.warnings) or "rôles modifiés par la validation de Viz"
+                changed.append(f"« {spec.title} » : {detail}")
+        if changed:
+            return ToolOutput(
+                content="Atelier Viz modifierait ces visuels (rien n'a été créé) ; corrige-les "
+                "et repropose le rapport :\n- " + "\n- ".join(changed),
+                is_error=True,
+            )
 
         visuals: list[dict[str, Any]] = []
         for index, result in enumerate(checked.results):
@@ -503,14 +585,9 @@ class CreateReportTool(_DataViaWriteTool[CreateReportInput]):
             "bookmarks": [],
         }
         saved = await self.client.save_report(report.id, body)
-        lines = [
-            f"Rapport « {saved.name} » créé dans Atelier Viz (id {saved.id}), "
-            f"{len(visuals)} visuel(s) sur la page « Synthèse ». À ouvrir dans Atelier Viz › Rapports."
-        ]
-        if warnings:
-            lines.append("Corrections appliquées par Atelier Viz : " + " ; ".join(warnings))
         return ToolOutput(
-            content="\n".join(lines),
+            content=f"Rapport « {saved.name} » créé dans Atelier Viz (id {saved.id}), "
+            f"{len(visuals)} visuel(s) sur la page « Synthèse ». À ouvrir dans Atelier Viz › Rapports.",
             data={
                 "report_id": saved.id,
                 "name": saved.name,

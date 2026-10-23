@@ -6,26 +6,47 @@ on:
     branches-ignore: [main]
 
 jobs:
-  tests:
+  lint:
+    # Ne dépend pas de Nexus : toujours exécuté.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - run: ruff check src tests scripts
+      - run: ruff format --check src tests scripts
+
+  tests:
+    # Tests et typage s'exécutent contre le backend d'Atelier Nexus (dépôt privé) :
+    # secret NEXUS_REPO_TOKEN = jeton en lecture seule sur Atelier_Nexus. Sans lui, l'étape
+    # est signalée comme sautée (avertissement) au lieu d'échouer.
+    runs-on: ubuntu-latest
+    env:
+      HAS_NEXUS_TOKEN: ${{ secrets.NEXUS_REPO_TOKEN != '' }}
+    steps:
+      - name: Jeton Atelier_Nexus absent
+        if: env.HAS_NEXUS_TOKEN != 'true'
+        run: echo "::warning::NEXUS_REPO_TOKEN absent — tests et mypy non exécutés (voir README, Développer)."
+      - uses: actions/checkout@v4
+        if: env.HAS_NEXUS_TOKEN == 'true'
         with:
           path: Agent_DatAnalyst
-      # Les tests s'exécutent contre le backend d'Atelier Nexus (dépôt privé) :
-      # secret NEXUS_REPO_TOKEN = jeton en lecture seule sur Atelier_Nexus.
       - uses: actions/checkout@v4
+        if: env.HAS_NEXUS_TOKEN == 'true'
         with:
           repository: m6rdxc9g4t-beep/Atelier_Nexus
           token: ${{ secrets.NEXUS_REPO_TOKEN }}
           path: Atelier_Nexus
       - uses: actions/setup-python@v5
+        if: env.HAS_NEXUS_TOKEN == 'true'
         with:
           python-version: "3.13"
-      - run: pip install -r Atelier_Nexus/backend/requirements-dev.txt
-      - working-directory: Agent_DatAnalyst
+      - if: env.HAS_NEXUS_TOKEN == 'true'
+        run: pip install -r Atelier_Nexus/backend/requirements-dev.txt
+      - if: env.HAS_NEXUS_TOKEN == 'true'
+        working-directory: Agent_DatAnalyst
         run: |
-          ruff check src tests
-          ruff format --check src tests
           MYPYPATH=src:../Atelier_Nexus/backend mypy
           pytest

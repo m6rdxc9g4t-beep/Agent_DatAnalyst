@@ -95,4 +95,6 @@ ruff check src tests
 MYPYPATH=src:../Atelier_Nexus/backend mypy
 ```
 
+CI : le lint tourne toujours ; tests et typage ont besoin du secret `NEXUS_REPO_TOKEN` (jeton GitHub en lecture seule sur Atelier_Nexus, à ajouter dans Settings › Secrets and variables › Actions). Sans lui, ils sont signalés comme sautés.
+
 Évaluation des agents sur le banc de Nexus : [evals/](evals/). Conventions : [CLAUDE.md](CLAUDE.md).

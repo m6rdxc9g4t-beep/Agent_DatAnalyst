@@ -33,23 +33,31 @@ flowchart LR
     C -->|relevé xlsx| TR
 ```
 
-Ce dépôt est une **extension** de Nexus : un paquet Python (`atelier_datanalyst`) que Nexus charge au démarrage. Tout le code de l'agent vit ici ; Nexus n'apporte que le chargeur d'extensions et l'accès aux fichiers joints ([Atelier_Nexus#29](https://github.com/m6rdxc9g4t-beep/Atelier_Nexus/pull/29)). Détails : [docs/architecture.md](docs/architecture.md).
+Ce dépôt est une **extension** de Nexus : un paquet Python (`atelier_datanalyst`) que Nexus charge au démarrage. Tout le code de l'agent vit ici ; Nexus n'apporte que le chargeur d'extensions et l'accès aux fichiers joints ([Atelier_Nexus#29](https://github.com/m6rdxc9g4t-beep/Atelier_Nexus/pull/29), [#30](https://github.com/m6rdxc9g4t-beep/Atelier_Nexus/pull/30)). Détails : [docs/architecture.md](docs/architecture.md).
 
 ## Installer dans Nexus
 
-Prérequis : Atelier Nexus avec la PR #29 fusionnée, et les applications lancées (ports par défaut : Viz 8000, Projets 3000, Trésorerie 5050, Convert 8010).
+Prérequis : Atelier Nexus à jour (`main` avec les PR #29 et #30), et les applications lancées (ports par défaut : Viz 8000, Projets 3000, Trésorerie 5050, Convert 8010).
+
+**App de bureau (macOS)** — son environnement Python est refait à partir du dépôt de Nexus, un `pip install` y serait perdu ; l'extension n'a aucune dépendance, il suffit de dire à Nexus où elle est :
 
 ```bash
-# dans l'environnement Python du backend de Nexus
-cd Atelier_Nexus/backend
-pip install -e ../../Agent_DatAnalyst
-
-# backend/.env
-NEXUS_PLUGINS=atelier_datanalyst
-CONVERT_BASE_URL=http://127.0.0.1:8010/api   # valeur par défaut
+cd ~/dev
+git -C Atelier_Nexus pull
+git clone https://github.com/m6rdxc9g4t-beep/Agent_DatAnalyst.git
 ```
 
-Relancez Nexus : **Data Analyst Atelier** apparaît dans la catégorie Données, **Trésorier** dans Finance. Une application non lancée ou non configurée est simplement écartée ; l'agent garde ses autres outils.
+Puis dans Atelier Nexus : menu **Réglages → Ouvrir le fichier de réglages** (`~/Library/Application Support/Atelier Nexus/.env`), ajouter à la fin et relancer l'app :
+
+```bash
+NEXUS_PLUGINS=atelier_datanalyst
+NEXUS_PLUGIN_PATHS=/Users/<vous>/dev/Agent_DatAnalyst/src
+# CONVERT_BASE_URL=http://127.0.0.1:8010/api   # valeur par défaut
+```
+
+**Serveur de développement** : `pip install -e ../Agent_DatAnalyst` dans l'environnement du backend (ou le même `NEXUS_PLUGIN_PATHS`), puis `NEXUS_PLUGINS=atelier_datanalyst` dans `backend/.env`.
+
+**Data Analyst Atelier** apparaît dans la catégorie Données, **Trésorier** dans Finance. Si rien n'apparaît : `~/Library/Logs/Atelier Nexus/atelier-nexus.log`, ligne « Extension « atelier_datanalyst » … ». Une application non lancée ou non configurée est simplement écartée ; l'agent garde ses autres outils.
 
 ## Outils ajoutés
 

@@ -62,7 +62,7 @@ async def main() -> None:
     env = ToolEnvironment(Settings())
     env.files = ConversationFiles(Store(), list(FILES))
     agents = {c.name: c for c in list_agent_classes()}
-    tools, _ = build_tools([*agents["datanalyst"].toolsets, *agents["tresorier"].toolsets], env)
+    tools, _ = build_tools([*agents["data_analyst"].toolsets, *agents["tresorier"].toolsets], env)
     t = {x.name: x for x in tools}
     ctx = ToolContext()
     ds = httpx.get("http://127.0.0.1:8000/api/datasets").json()

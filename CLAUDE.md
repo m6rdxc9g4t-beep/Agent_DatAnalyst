@@ -1,8 +1,8 @@
 # CLAUDE.md — Agent_DatAnalyst
 
 Extension d'Atelier Nexus (paquet `atelier_datanalyst`, chargé par `NEXUS_PLUGINS`). Elle ajoute
-des connecteurs (Convert, écritures Viz, plan Projets, saisies Trésorerie) et deux agents :
-Data Analyst Atelier et Trésorier. Architecture : docs/architecture.md.
+des connecteurs (Convert, écritures Viz, plan Projets, saisies Trésorerie), complète l'agent
+Data Analyst de Nexus (`extend_agent`) et ajoute l'agent Trésorier. Architecture : docs/architecture.md.
 
 ## Commandes
 - Tests : `pytest` (Atelier_Nexus cloné à côté, ou `NEXUS_BACKEND=/chemin/backend`)

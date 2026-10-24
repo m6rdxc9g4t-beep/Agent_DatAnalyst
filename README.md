@@ -2,7 +2,7 @@
 
 **Un agent pour Atelier Nexus qui part d'un fichier et le fait circuler dans toute la suite Atelier.**
 
-Dans Nexus, on glisse un fichier dans le chat et on dit ce qu'on veut. L'agent **Data Analyst Atelier** :
+Dans Nexus, on glisse un fichier dans le chat et on dit ce qu'on veut. L'agent **Data Analyst** de Nexus, complété par cette extension :
 
 | Demande | Ce qu'il fait | Application |
 |---|---|---|
@@ -20,7 +20,7 @@ Chaque écriture s'arrête sur une carte de validation dans Nexus : rien n'est c
 ```mermaid
 flowchart LR
     U([Fichier + demande]) --> N[Atelier Nexus]
-    N --> DA{{Data Analyst Atelier<br/>Claude ou local}}
+    N --> DA{{Data Analyst de Nexus<br/>Claude ou local}}
     N --> T{{Trésorier<br/>local uniquement}}
     DA --> C[Convert]
     DA --> V[Viz]
@@ -57,7 +57,7 @@ NEXUS_PLUGIN_PATHS=/Users/<vous>/dev/Agent_DatAnalyst/src
 
 **Serveur de développement** : `pip install -e ../Agent_DatAnalyst` dans l'environnement du backend (ou le même `NEXUS_PLUGIN_PATHS`), puis `NEXUS_PLUGINS=atelier_datanalyst` dans `backend/.env`.
 
-**Data Analyst Atelier** apparaît dans la catégorie Données, **Trésorier** dans Finance. Si rien n'apparaît : `~/Library/Logs/Atelier Nexus/atelier-nexus.log`, ligne « Extension « atelier_datanalyst » … ». Une application non lancée ou non configurée est simplement écartée ; l'agent garde ses autres outils.
+Le **Data Analyst** (catégorie Données) gagne Convert, les écritures Viz et le plan Projets ; **Trésorier** apparaît dans Finance. Avec une version de Nexus antérieure à `extend_agent`, un agent séparé « Data Analyst Atelier » est créé à la place. Si rien n'apparaît : `~/Library/Logs/Atelier Nexus/atelier-nexus.log`, ligne « Extension « atelier_datanalyst » … ». Une application non lancée ou non configurée est simplement écartée ; l'agent garde ses autres outils.
 
 ## Outils ajoutés
 

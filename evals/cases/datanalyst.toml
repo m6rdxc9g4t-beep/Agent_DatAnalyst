@@ -11,7 +11,7 @@
 
 [[case]]
 id = "dat-rapport-viz"
-agent = "datanalyst"
+agent = "data_analyst"
 apps = ["data_via"]
 tags = ["datanalyst", "viz", "ecriture"]
 description = "Rapport Viz sur un jeu existant : schéma lu, visuels sur de vraies colonnes."
@@ -24,7 +24,7 @@ approval_requested = ["data_via_create_report"]
 
 [[case]]
 id = "dat-plan-projets"
-agent = "datanalyst"
+agent = "data_analyst"
 apps = ["projets"]
 tags = ["datanalyst", "projets", "ecriture"]
 description = "Plan de travail tiré d'une liste donnée par l'utilisateur, en une validation."
@@ -41,7 +41,7 @@ approval_requested = ["projets_create_plan"]
 
 [[case]]
 id = "dat-finances-vers-tresorier"
-agent = "datanalyst"
+agent = "data_analyst"
 apps = []
 tags = ["datanalyst", "confidentialite"]
 description = "Les finances ne passent pas par le Data Analyst (Claude) : il oriente vers le Trésorier."

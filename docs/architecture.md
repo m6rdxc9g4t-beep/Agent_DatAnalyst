@@ -5,8 +5,8 @@
 Nexus fournit déjà ce qu'un agent sérieux exige : boucle d'agent, routeur Claude / Ollama,
 validation humaine des écritures, verrou local des données sensibles, artefacts, historique.
 Refaire une boucle à côté (comme le `agent.py` du module 1) dupliquerait ces garde-fous.
-Agent_DatAnalyst ajoute donc à Nexus, de l'extérieur : des connecteurs (outils), deux agents
-et leurs prompts. Nexus le charge parce qu'il est nommé dans `NEXUS_PLUGINS`.
+Agent_DatAnalyst ajoute donc à Nexus, de l'extérieur : des connecteurs (outils), leurs recettes
+pour l'agent Data Analyst de Nexus, et l'agent Trésorier. Nexus le charge parce qu'il est nommé dans `NEXUS_PLUGINS`.
 
 Ce que Nexus apporte (PR #29) et que l'extension ne peut pas faire seule :
 
@@ -15,14 +15,20 @@ Ce que Nexus apporte (PR #29) et que l'extension ne peut pas faire seule :
 | `app/plugins.py` | importe `atelier_datanalyst` et appelle `register()` |
 | `env.conversation_files()` | fichiers joints de la conversation en cours, et seulement eux |
 | `env.client(nom, fabrique)` | clients HTTP de l'extension fermés en fin d'exécution |
+| `extend_agent(...)` | complète l'agent Data Analyst fourni (boîtes, consignes, exemples) |
 
 ## Deux agents
 
-| | Data Analyst Atelier (`datanalyst`) | Trésorier (`tresorier`) |
+| | Data Analyst de Nexus (`data_analyst`), complété | Trésorier (`tresorier`) |
 |---|---|---|
 | Moteur | au choix (Claude ou local) | **local imposé** |
-| Applications | Convert, Viz, Tab, Projets | Trésorerie, Convert |
-| Itérations max | 16 | 14 |
+| Applications | Analyse statistique (Nexus), Convert, Viz, Tab, Projets | Trésorerie, Convert |
+| Itérations max | 24 (Nexus) | 14 |
+
+Le Data Analyst n'est plus un agent de l'extension : Nexus fournit un agent Data unique
+(analyse statistique, Viz, Tab, Power BI) et l'extension lui greffe ses boîtes et ses recettes
+par `extend_agent` (idempotent, refuse toute boîte sensible). Avec un Nexus sans `extend_agent`,
+l'extension enregistre encore l'ancien agent « Data Analyst Atelier » (`datanalyst`).
 
 La séparation découle d'une règle de Nexus : un agent qui touche une boîte `sensitive` est
 verrouillé sur Ollama. Un agent unique serait donc local pour tout, y compris Viz ; deux agents

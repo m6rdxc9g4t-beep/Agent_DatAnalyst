@@ -90,11 +90,11 @@ def show(step: str, out) -> None:
 
 async def main() -> None:
     names = [c.name for c in list_agent_classes()]
-    assert "datanalyst" in names and "tresorier" in names, names
+    assert "data_analyst" in names and "tresorier" in names, names
     env = ToolEnvironment(Settings())
     env.files = ConversationFiles(Store(), list(FILES))
     agent = {c.name: c for c in list_agent_classes()}
-    tools, unavailable = build_tools(list(agent["datanalyst"].toolsets), env)
+    tools, unavailable = build_tools(list(agent["data_analyst"].toolsets), env)
     treso, _ = build_tools(list(agent["tresorier"].toolsets), env)
     t = {x.name: x for x in [*tools, *treso]}
     print("Boîtes indisponibles :", [u.label for u in unavailable])

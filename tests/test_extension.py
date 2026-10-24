@@ -32,22 +32,25 @@ def test_nexus_loads_the_extension_once() -> None:
     assert state.loaded and state.error is None
     atelier_datanalyst.register()  # appel répété : sans effet (pas de double enregistrement)
     names = [cls.name for cls in list_agent_classes()]
-    assert names.count("datanalyst") == 1 and names.count("tresorier") == 1
+    # Le Data Analyst de Nexus est complété, pas doublé ; le Trésorier est un agent à part
+    assert "datanalyst" not in names and names.count("tresorier") == 1
+    assert agent("data_analyst").toolsets.count("convert_write") == 1
 
 
 async def test_agents_appear_in_the_catalog_after_the_builtin_ones() -> None:
     infos = await AgentCatalog().infos(make_router(), env())
     names = [i.name for i in infos]
-    assert names[0] == "assistant" and {"datanalyst", "tresorier"} <= set(names)
-    analyst = next(i for i in infos if i.name == "datanalyst")
-    assert analyst.category == "Données" and analyst.starters
+    assert names[0] == "assistant" and {"data_analyst", "tresorier"} <= set(names)
+    analyst = next(i for i in infos if i.name == "data_analyst")
+    assert analyst.category == "Données"
+    assert any("rapport Atelier Viz" in s for s in analyst.starters)
 
 
-def test_datanalyst_runs_on_claude_and_never_touches_tresorerie() -> None:
-    cls = agent("datanalyst")
+def test_data_analyst_runs_on_claude_and_never_touches_tresorerie() -> None:
+    cls = agent("data_analyst")
     assert not is_sensitive(list(cls.toolsets))
     assert not any(get_toolset(t).app == "tresorerie" for t in cls.toolsets)
-    for needed in ("fichiers", "convert_write", "data_via_write", "tab", "projets_plan"):
+    for needed in ("analyse", "fichiers", "convert_write", "data_via_write", "tab", "projets_plan"):
         assert needed in cls.toolsets
     assert "Trésorier" in cls.system_prompt  # oriente les finances vers l'agent local
 

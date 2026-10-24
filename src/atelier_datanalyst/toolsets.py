@@ -10,7 +10,7 @@ from app.tools.toolsets import Toolset, register_toolset
 from atelier_datanalyst.convert import ConvertClient, convert_read_tools, convert_write_tools
 from atelier_datanalyst.files import files_tools
 from atelier_datanalyst.projets import PlanClient, projets_plan_tools
-from atelier_datanalyst.settings import get_settings
+from atelier_datanalyst.settings import convert_url, get_settings
 from atelier_datanalyst.tresorerie import TresoWriteClient, tresorerie_write_tools
 from atelier_datanalyst.viz import VizWriteClient, viz_write_tools
 
@@ -36,7 +36,9 @@ LABELS = {
 
 def _convert(env: ToolEnvironment) -> ConvertClient:
     def make() -> ConvertClient:
-        client = ConvertClient.from_settings(get_settings(), env.transport("convert"))
+        client = ConvertClient.from_settings(
+            get_settings(), env.transport("convert"), base_url=convert_url(env.settings)
+        )
         if client is None:
             from app.tools.http import AppNotConfiguredError
 
@@ -102,8 +104,19 @@ def register_toolsets() -> None:
             label="Atelier Convert",
             description="Conversions de fichiers (PDF, relevés, Excel) en tables typées, projets d'Atelier Tab, en lecture.",
             build=lambda env: convert_read_tools(_convert(env)),
-            is_configured=lambda _s: bool(get_settings().convert_base_url),
+            is_configured=lambda s: bool(convert_url(s)),
             app="convert",
+        )
+    )
+    register_toolset(
+        Toolset(
+            id="convert_releves",
+            label="Atelier Convert — relevés (100 % local)",
+            description="Comme « Atelier Convert », relevés bancaires compris : agent verrouillé sur le modèle local.",
+            build=lambda env: convert_read_tools(_convert(env), statements=True),
+            is_configured=lambda s: bool(convert_url(s)),
+            app="convert",
+            sensitive=True,
         )
     )
     register_toolset(
@@ -114,7 +127,7 @@ def register_toolsets() -> None:
             build=lambda env: convert_write_tools(
                 _convert(env), env.conversation_files, lambda: _viz(env)
             ),
-            is_configured=lambda _s: bool(get_settings().convert_base_url),
+            is_configured=lambda s: bool(convert_url(s)),
             app="convert",
             writes=True,
         )

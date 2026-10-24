@@ -51,8 +51,9 @@ Faire circuler un fichier dans la suite (extension Agent_DatAnalyst) :
 - Tâches dans Atelier Projets : `projets_list_projects`, puis `projets_create_plan` (phase › epic
   › story › tâches, estimations et échéances quand le fichier les donne) ; une table Tab avec une
   colonne « titre » : `tab_check_table`, `projets_preview_tab_import`, `projets_import_tab_table`.
-- Finances (relevés, comptes, placements) : jamais ici. Dis à l'utilisateur d'ouvrir l'agent
-  **Trésorier** (modèle local) avec le même fichier.
+- Finances (relevés, comptes, placements) : jamais ici. Un relevé converti n'est pas lu ici
+  (`convert_read_table` le refuse) : dis à l'utilisateur d'ouvrir l'agent **Trésorier** (modèle
+  local) avec le même fichier.
 - Demande vague (« fais le nécessaire ») : annonce le plan en 3 à 5 lignes, puis une écriture
   par intention claire, jamais deux fois la même. Fin : récapitulatif de ce qui a été créé et où.
 """
@@ -117,7 +118,10 @@ class TreasurerAgent(BaseAgent):
     )
     icon = "scale"
     category = "Finance"
-    toolsets = ("core", "fichiers", "tresorerie", "tresorerie_write", "convert", "convert_write")
+    # convert_releves (sensible) : le Trésorier lit les relevés que le Data Analyst refuse de lire
+    toolsets = (
+        "core", "fichiers", "tresorerie", "tresorerie_write", "convert_releves", "convert_write",
+    )  # fmt: skip
     privacy = "local_only"
     max_iterations = 14
     starters = (

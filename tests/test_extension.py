@@ -102,3 +102,37 @@ async def test_unconfigured_convert_is_skipped_not_fatal(monkeypatch: pytest.Mon
         await e.aclose()
     finally:
         ext_settings.get_settings.cache_clear()
+
+
+async def test_convert_address_comes_from_nexus_and_must_be_local() -> None:
+    """Adresse de Convert : celle des réglages de Nexus quand il la déclare (rechargée à chaud),
+    sinon celle de l'extension ; une adresse non locale écarte la boîte avec la raison (relevés
+    et fichiers ne quittent pas la machine), sans casser l'agent."""
+    from types import SimpleNamespace
+
+    from atelier_datanalyst.settings import convert_url
+
+    assert convert_url(SimpleNamespace(convert_base_url="http://127.0.0.1:9010/api")) == (
+        "http://127.0.0.1:9010/api"
+    )
+    assert convert_url(SimpleNamespace(convert_base_url="")) is None  # vidé dans la roue dentée
+    assert convert_url(SimpleNamespace()) == ext_settings.get_settings().convert_base_url
+    if "convert_base_url" not in Settings.model_fields:
+        pytest.skip("Nexus sans CONVERT_BASE_URL : seule l'adresse de l'extension compte")
+    e = env(convert_base_url="https://convert.example.org/api")
+    tools, unavailable = build_tools(["convert", "convert_write"], e)
+    assert tools == [] and {u.id for u in unavailable} == {"convert", "convert_write"}
+    assert all("adresse locale" in u.reason for u in unavailable)
+    await e.aclose()
+
+
+def test_statements_box_is_sensitive_and_only_for_local_agents() -> None:
+    from app.agents.registry import get_agent_class
+
+    assert get_toolset("convert_releves").sensitive and not get_toolset("convert").sensitive
+    treasurer = get_agent_class("tresorier")
+    assert "convert_releves" in treasurer.toolsets and "convert" not in treasurer.toolsets
+    assert treasurer.privacy == "local_only"
+    for cls in list_agent_classes():
+        if "convert_releves" in cls.toolsets:
+            assert cls.privacy == "local_only", cls.name

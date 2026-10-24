@@ -2,6 +2,9 @@
 
 Les adresses d'Atelier Viz, Projets et Trésorerie viennent des réglages de Nexus
 (`DATA_VIA_BASE_URL`, `PROJETS_BASE_URL`, `TRESORERIE_BASE_URL`) : une seule source de vérité.
+Celle d'Atelier Convert aussi quand Nexus la connaît (`CONVERT_BASE_URL`, nœud des workflows) :
+`convert_url` la lit dans les réglages de Nexus (rechargés à chaud depuis la roue dentée), et
+retombe sur ce fichier pour un Nexus plus ancien.
 """
 
 from __future__ import annotations
@@ -29,3 +32,15 @@ class DatAnalystSettings(BaseSettings):
 @lru_cache
 def get_settings() -> DatAnalystSettings:
     return DatAnalystSettings()
+
+
+_UNSET = object()
+
+
+def convert_url(nexus_settings: object) -> str | None:
+    """Adresse d'Atelier Convert : celle de Nexus s'il la déclare (même variable, rechargée à
+    chaud), sinon celle de l'extension."""
+    value = getattr(nexus_settings, "convert_base_url", _UNSET)
+    if value is _UNSET:
+        return get_settings().convert_base_url
+    return value or None  # type: ignore[return-value]

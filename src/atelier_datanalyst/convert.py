@@ -21,10 +21,11 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Literal
 
 import httpx
+from app.core.net import is_loopback
 from app.tools.base import Artifact, BaseTool, ToolContext, ToolInput, ToolOutput
 from app.tools.data_via import DataViaError, markdown_table
 from app.tools.formatting import atelier_table
-from app.tools.http import AppClient, AppError, AppRequestError
+from app.tools.http import AppClient, AppError, AppNotConfiguredError, AppRequestError
 from pydantic import BaseModel, ConfigDict, Field
 
 from atelier_datanalyst.files import FileGetter, file_field, human_size
@@ -155,12 +156,27 @@ class ConvertClient(AppClient):
 
     @classmethod
     def from_settings(
-        cls, settings: DatAnalystSettings, transport: httpx.AsyncBaseTransport | None = None
+        cls,
+        settings: DatAnalystSettings,
+        transport: httpx.AsyncBaseTransport | None = None,
+        *,
+        base_url: str | None | Literal["extension"] = "extension",
     ) -> ConvertClient | None:
-        if not settings.convert_base_url:
+        """`base_url` : adresse lue dans les réglages de Nexus (`convert_url`), ou « extension »
+        pour celle de l'extension. Adresse de bouclage seulement : relevés et fichiers ne quittent
+        jamais la machine (comme le nœud de Nexus, docs/SUITE.md §5.1)."""
+        url = settings.convert_base_url if base_url == "extension" else base_url
+        if not url:
             return None
+        if not is_loopback(url):
+            # « Non configurée » : la boîte est écartée avec la raison, l'agent reste utilisable
+            raise AppNotConfiguredError(
+                f"Atelier Convert doit être joint à une adresse locale (127.0.0.1 ou localhost), "
+                f"pas {url} : les relevés et les fichiers ne quittent pas la machine.",
+                app=cls.app,
+            )
         # Conversion d'un PDF scanné (OCR) : plus long qu'une lecture
-        return cls(settings.convert_base_url, timeout=settings.convert_timeout, transport=transport)
+        return cls(url, timeout=settings.convert_timeout, transport=transport)
 
     async def health(self) -> ConvertHealth:
         health = self.parse(ConvertHealth, await self.request("GET", "health"))
@@ -279,7 +295,26 @@ class ReadTableTool(_ConvertTool[ReadTableInput]):
     input_model = ReadTableInput
     output_format = "atelier-table/1"
 
+    #: Relevés bancaires lus aussi (`StatementTableTool`, boîte sensible) ; sinon refusés : leurs
+    #: lignes (libellés, montants, soldes) partiraient chez un modèle qui peut être Claude
+    statements: ClassVar[bool] = False
+
     async def run(self, params: ReadTableInput, ctx: ToolContext) -> ToolOutput:
+        if not self.statements:
+            summary = next(
+                (c for c in await self.client.conversions() if c.id == params.conversion_id), None
+            )
+            if summary is not None and summary.statement is not None:
+                return ToolOutput(
+                    content=(
+                        f"« {summary.name} » est un relevé bancaire ({summary.detected}) : ses "
+                        "lignes sont une donnée financière, je ne les lis pas ici. Pour l'analyser "
+                        "ou l'importer dans Atelier Trésorerie, ouvre l'agent Trésorier (100 % "
+                        "local). Je peux encore l'envoyer dans Atelier Tab (convert_send_to_tab), "
+                        "sans le lire."
+                    ),
+                    data={"refused": "statement", "conversion_id": params.conversion_id},
+                )
         table = await self.client.table(params.conversion_id, limit=params.limit)
         keys = [c.key for c in table.columns]
         shown = [[row.get(k) for k in keys] for row in table.rows[:MAX_ROWS_FOR_MODEL]]
@@ -499,8 +534,18 @@ class SendToVizTool(_ConvertTool[SendToVizInput]):
         return ToolOutput(content=text, data=result.model_dump())
 
 
-def convert_read_tools(client: ConvertClient) -> list[BaseTool[Any]]:
-    return [ListConversionsTool(client), ReadTableTool(client), TabProjectsTool(client)]
+class StatementTableTool(ReadTableTool):
+    """`convert_read_table` de la boîte sensible `convert_releves` : relevés bancaires compris,
+    pour un agent 100 % local (Trésorier)."""
+
+    statements = True
+    sensitive = True
+
+
+def convert_read_tools(client: ConvertClient, *, statements: bool = False) -> list[BaseTool[Any]]:
+    """`statements=True` : boîte sensible `convert_releves` (relevés bancaires lus aussi)."""
+    table = StatementTableTool(client) if statements else ReadTableTool(client)
+    return [ListConversionsTool(client), table, TabProjectsTool(client)]
 
 
 def convert_write_tools(

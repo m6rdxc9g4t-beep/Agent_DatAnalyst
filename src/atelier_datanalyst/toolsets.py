@@ -110,6 +110,17 @@ def register_toolsets() -> None:
     )
     register_toolset(
         Toolset(
+            id="convert_releves",
+            label="Atelier Convert — relevés (100 % local)",
+            description="Comme « Atelier Convert », relevés bancaires compris : agent verrouillé sur le modèle local.",
+            build=lambda env: convert_read_tools(_convert(env), statements=True),
+            is_configured=lambda s: bool(convert_url(s)),
+            app="convert",
+            sensitive=True,
+        )
+    )
+    register_toolset(
+        Toolset(
             id="convert_write",
             label="Atelier Convert — conversions et envois",
             description="Convertir un fichier joint, envoyer une conversion dans Atelier Tab ou Atelier Viz (avec validation).",

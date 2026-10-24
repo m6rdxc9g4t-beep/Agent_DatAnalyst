@@ -124,3 +124,15 @@ async def test_convert_address_comes_from_nexus_and_must_be_local() -> None:
     assert tools == [] and {u.id for u in unavailable} == {"convert", "convert_write"}
     assert all("adresse locale" in u.reason for u in unavailable)
     await e.aclose()
+
+
+def test_statements_box_is_sensitive_and_only_for_local_agents() -> None:
+    from app.agents.registry import get_agent_class
+
+    assert get_toolset("convert_releves").sensitive and not get_toolset("convert").sensitive
+    treasurer = get_agent_class("tresorier")
+    assert "convert_releves" in treasurer.toolsets and "convert" not in treasurer.toolsets
+    assert treasurer.privacy == "local_only"
+    for cls in list_agent_classes():
+        if "convert_releves" in cls.toolsets:
+            assert cls.privacy == "local_only", cls.name

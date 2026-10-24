@@ -86,7 +86,8 @@ async def test_files_tool_lists_and_explains_when_empty() -> None:
 
 # ═══ Atelier Convert ══════════════════════════════════════════════
 
-CONV_ID = "0123456789ab"
+CONV_ID = "0123456789ab"  # relevé bancaire reconnu (`statement`)
+SALES_ID = "fedcba987654"  # tableau ordinaire
 TABLE = {
     "format": "atelier-table/1",
     "name": "releve_octobre",
@@ -124,7 +125,15 @@ class FakeConvert:
                         "updated_at": "2026-10-23T08:00:00Z",
                         "source": {"filename": "releve.pdf", "kind": "pdf", "size": 1200, "sha256": "x"},
                         "detected": "Relevé bancaire · 3 opérations", "rows": 3, "columns": 3,
-                    }
+                        "statement": {"transactions": 3, "start": "2026-10-01", "end": "2026-10-03",
+                                      "total_debit": 33.0, "total_credit": 0.0, "balance_check": "ok"},
+                    },
+                    {
+                        "id": SALES_ID, "name": "Ventes 2026", "created_at": "2026-10-23T08:00:00Z",
+                        "updated_at": "2026-10-23T08:00:00Z",
+                        "source": {"filename": "ventes.xlsx", "kind": "xlsx", "size": 900, "sha256": "y"},
+                        "detected": "Tableau · 3 lignes", "rows": 3, "columns": 3, "statement": None,
+                    },
                 ],
             )  # fmt: skip
         if (method, path) == ("POST", "/atelier/conversions"):
@@ -135,7 +144,10 @@ class FakeConvert:
                 json={"conversion_id": CONV_ID, "name": "Relevé octobre", "rows": 3, "columns": 3,
                       "detected": "Relevé bancaire · 3 opérations", "warnings": []},
             )  # fmt: skip
-        if (method, path) == ("GET", f"/atelier/conversions/{CONV_ID}/table"):
+        if method == "GET" and path in (
+            f"/atelier/conversions/{CONV_ID}/table",
+            f"/atelier/conversions/{SALES_ID}/table",
+        ):
             return httpx.Response(200, json=TABLE)
         if (method, path) == ("GET", "/tab"):
             return httpx.Response(
@@ -168,7 +180,7 @@ async def test_convert_read_tools(convert: tuple[ConvertClient, FakeConvert]) ->
     ctx = ToolContext()
     listing = await tools["convert_list_conversions"].invoke({}, ctx)
     assert CONV_ID in listing.content and "Relevé bancaire" in listing.content
-    table = await tools["convert_read_table"].invoke({"conversion_id": CONV_ID}, ctx)
+    table = await tools["convert_read_table"].invoke({"conversion_id": SALES_ID}, ctx)
     assert (
         "3 ligne(s)" in table.content
         and table.artifacts
@@ -570,3 +582,22 @@ async def test_tresorerie_import_from_a_conversion_commits_only_valid_rows(
     assert pdf.is_error and "convert_file" in pdf.content
     neither = await tools["tresorerie_preview_import"].invoke({"account_id": 1}, ToolContext())
     assert neither.is_error
+
+
+async def test_statement_rows_never_reach_a_model_that_may_be_claude(
+    convert: tuple[ConvertClient, FakeConvert],
+) -> None:
+    """Boîte `convert` (Data Analyst, Claude possible) : un relevé bancaire n'est pas lu, sans
+    même demander sa table ; boîte sensible `convert_releves` (Trésorier, local) : il l'est."""
+    client, fake = convert
+    ctx = ToolContext()
+    tools = {t.name: t for t in convert_read_tools(client)}
+    refused = await tools["convert_read_table"].invoke({"conversion_id": CONV_ID}, ctx)
+    assert "relevé bancaire" in refused.content and "Trésorier" in refused.content
+    assert not refused.artifacts and "Opération" not in refused.content
+    assert not [r for r in fake.requests if r.url.path.endswith(f"{CONV_ID}/table")]
+    assert not tools["convert_read_table"].sensitive
+    local = {t.name: t for t in convert_read_tools(client, statements=True)}
+    assert local["convert_read_table"].sensitive
+    table = await local["convert_read_table"].invoke({"conversion_id": CONV_ID}, ctx)
+    assert "Opération 0" in table.content

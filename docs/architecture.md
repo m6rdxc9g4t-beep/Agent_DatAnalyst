@@ -22,7 +22,7 @@ Ce que Nexus apporte (PR #29) et que l'extension ne peut pas faire seule :
 | | Data Analyst de Nexus (`data_analyst`), complété | Trésorier (`tresorier`) |
 |---|---|---|
 | Moteur | au choix (Claude ou local) | **local imposé** |
-| Applications | Analyse statistique (Nexus), Convert, Viz, Tab, Projets | Trésorerie, Convert |
+| Applications | Analyse statistique (Nexus), Convert (sans lire les relevés bancaires), Viz, Tab, Projets | Trésorerie, Convert (relevés compris : boîte sensible `convert_releves`) |
 | Itérations max | 24 (Nexus) | 14 |
 
 Le Data Analyst n'est plus un agent de l'extension : Nexus fournit un agent Data unique

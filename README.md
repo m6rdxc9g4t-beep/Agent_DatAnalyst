@@ -64,7 +64,8 @@ Le **Data Analyst** (catégorie Données) gagne Convert, les écritures Viz et l
 | Boîte | Outils | Écrit ? |
 |---|---|---|
 | `fichiers` | `conversation_files` | non |
-| `convert` | `convert_list_conversions`, `convert_read_table`, `convert_tab_projects` | non |
+| `convert` | `convert_list_conversions`, `convert_read_table` (relevés bancaires refusés), `convert_tab_projects` | non |
+| `convert_releves` | les mêmes, relevés bancaires lus aussi (Trésorier) | non, **sensible** |
 | `convert_write` | `convert_file`, `convert_send_to_tab`, `convert_send_to_viz` | oui, validé |
 | `data_via_write` | `data_via_import_file`, `data_via_create_report` | oui, validé |
 | `projets_plan` | `projets_create_plan` | oui, validé |
@@ -76,6 +77,8 @@ Le Data Analyst réutilise aussi les boîtes fournies par Nexus : `data_via` (le
 
 - **Validation humaine** de toute écriture, avec un résumé concret (« Créer dans Atelier Viz le rapport « Ventes 2026 » (3 visuels : …) »).
 - **Confidentialité** : tout outil Trésorerie est `sensitive` ; l'agent qui l'utilise ne peut pas tourner sur Claude. Le Data Analyst n'a aucun outil Trésorerie et oriente vers le Trésorier.
+- **Relevés bancaires** : le Data Analyst (Claude possible) ne lit pas les lignes d'une conversion reconnue comme relevé (`convert_read_table` refuse et oriente vers le Trésorier) ; le Trésorier les lit par la boîte sensible `convert_releves`. Envoyer un relevé dans Tab ou Viz reste possible (écriture validée) : il devient alors lisible par les agents qui lisent ces applications.
+- **Atelier Convert** : adresse `CONVERT_BASE_URL` lue dans les réglages de Nexus (rechargée à chaud ; repli sur celle de l'extension avec un Nexus plus ancien), adresse locale seulement.
 - **Fichiers** : un outil ne voit que les fichiers cités par la conversation en cours ; leur contenu n'est jamais renvoyé au modèle par les outils.
 - **Pas de doublon** : clés d'idempotence stables sur Convert et Viz ; Trésorerie ignore les opérations déjà importées ; un plan Projets interrompu dit ce qui existe déjà.
 - **Viz sans IA tierce, fermé par défaut** : les visuels sont contrôlés contre le schéma relu au moment d'écrire (colonnes, agrégations permises par type, une seule mesure pour secteurs / KPI…), puis par Atelier Viz (`/ai/visuals/repair`, sans appel à son IA). Viz corrigerait certains visuels en silence : si le visuel changerait par rapport à celui que vous avez validé, rien n'est écrit et l'agent repropose. La carte de validation décrit chaque visuel (« Courbes « CA par mois » : somme de chiffre_affaires par date (mois) »).

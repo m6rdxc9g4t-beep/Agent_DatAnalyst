@@ -295,7 +295,26 @@ class ReadTableTool(_ConvertTool[ReadTableInput]):
     input_model = ReadTableInput
     output_format = "atelier-table/1"
 
+    #: Relevés bancaires lus aussi (`StatementTableTool`, boîte sensible) ; sinon refusés : leurs
+    #: lignes (libellés, montants, soldes) partiraient chez un modèle qui peut être Claude
+    statements: ClassVar[bool] = False
+
     async def run(self, params: ReadTableInput, ctx: ToolContext) -> ToolOutput:
+        if not self.statements:
+            summary = next(
+                (c for c in await self.client.conversions() if c.id == params.conversion_id), None
+            )
+            if summary is not None and summary.statement is not None:
+                return ToolOutput(
+                    content=(
+                        f"« {summary.name} » est un relevé bancaire ({summary.detected}) : ses "
+                        "lignes sont une donnée financière, je ne les lis pas ici. Pour l'analyser "
+                        "ou l'importer dans Atelier Trésorerie, ouvre l'agent Trésorier (100 % "
+                        "local). Je peux encore l'envoyer dans Atelier Tab (convert_send_to_tab), "
+                        "sans le lire."
+                    ),
+                    data={"refused": "statement", "conversion_id": params.conversion_id},
+                )
         table = await self.client.table(params.conversion_id, limit=params.limit)
         keys = [c.key for c in table.columns]
         shown = [[row.get(k) for k in keys] for row in table.rows[:MAX_ROWS_FOR_MODEL]]
@@ -515,8 +534,18 @@ class SendToVizTool(_ConvertTool[SendToVizInput]):
         return ToolOutput(content=text, data=result.model_dump())
 
 
-def convert_read_tools(client: ConvertClient) -> list[BaseTool[Any]]:
-    return [ListConversionsTool(client), ReadTableTool(client), TabProjectsTool(client)]
+class StatementTableTool(ReadTableTool):
+    """`convert_read_table` de la boîte sensible `convert_releves` : relevés bancaires compris,
+    pour un agent 100 % local (Trésorier)."""
+
+    statements = True
+    sensitive = True
+
+
+def convert_read_tools(client: ConvertClient, *, statements: bool = False) -> list[BaseTool[Any]]:
+    """`statements=True` : boîte sensible `convert_releves` (relevés bancaires lus aussi)."""
+    table = StatementTableTool(client) if statements else ReadTableTool(client)
+    return [ListConversionsTool(client), table, TabProjectsTool(client)]
 
 
 def convert_write_tools(

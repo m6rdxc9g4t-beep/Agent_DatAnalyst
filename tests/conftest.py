@@ -27,7 +27,7 @@ sys.path.insert(0, str(NEXUS_BACKEND))
 sys.path.insert(0, str(ROOT / "src"))
 
 # Réglages déterministes : aucun .env local, Convert configuré sur une adresse fictive
-os.environ.setdefault("CONVERT_BASE_URL", "http://convert.test/api")
+os.environ.setdefault("CONVERT_BASE_URL", "http://127.0.0.1:8010/api")
 os.environ["TRIGGERS_ENABLED"] = "false"
 
 import atelier_datanalyst  # noqa: E402

@@ -21,10 +21,11 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Literal
 
 import httpx
+from app.core.net import is_loopback
 from app.tools.base import Artifact, BaseTool, ToolContext, ToolInput, ToolOutput
 from app.tools.data_via import DataViaError, markdown_table
 from app.tools.formatting import atelier_table
-from app.tools.http import AppClient, AppError, AppRequestError
+from app.tools.http import AppClient, AppError, AppNotConfiguredError, AppRequestError
 from pydantic import BaseModel, ConfigDict, Field
 
 from atelier_datanalyst.files import FileGetter, file_field, human_size
@@ -155,12 +156,27 @@ class ConvertClient(AppClient):
 
     @classmethod
     def from_settings(
-        cls, settings: DatAnalystSettings, transport: httpx.AsyncBaseTransport | None = None
+        cls,
+        settings: DatAnalystSettings,
+        transport: httpx.AsyncBaseTransport | None = None,
+        *,
+        base_url: str | None | Literal["extension"] = "extension",
     ) -> ConvertClient | None:
-        if not settings.convert_base_url:
+        """`base_url` : adresse lue dans les réglages de Nexus (`convert_url`), ou « extension »
+        pour celle de l'extension. Adresse de bouclage seulement : relevés et fichiers ne quittent
+        jamais la machine (comme le nœud de Nexus, docs/SUITE.md §5.1)."""
+        url = settings.convert_base_url if base_url == "extension" else base_url
+        if not url:
             return None
+        if not is_loopback(url):
+            # « Non configurée » : la boîte est écartée avec la raison, l'agent reste utilisable
+            raise AppNotConfiguredError(
+                f"Atelier Convert doit être joint à une adresse locale (127.0.0.1 ou localhost), "
+                f"pas {url} : les relevés et les fichiers ne quittent pas la machine.",
+                app=cls.app,
+            )
         # Conversion d'un PDF scanné (OCR) : plus long qu'une lecture
-        return cls(settings.convert_base_url, timeout=settings.convert_timeout, transport=transport)
+        return cls(url, timeout=settings.convert_timeout, transport=transport)
 
     async def health(self) -> ConvertHealth:
         health = self.parse(ConvertHealth, await self.request("GET", "health"))
